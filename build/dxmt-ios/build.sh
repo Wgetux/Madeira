@@ -164,6 +164,28 @@ echo "=== winemetal unix (Objective-C) ==="
 compile_objc "$DXMT_SRC/winemetal/unix/winemetal_unix.c" winemetal_unix
 compile_objc "$DXMT_SRC/winemetal/unix/cache.c"          cache
 
+# MADEIRA-MAC-BUILD: airconv_context.cpp includes air_msad.h, air_samplepos.h and
+# air_tessellation.h, which meson generates (src/airconv/meson.build:59-70) as
+# metal -c -> .air -> xxd -i. Generate them the same way, BEFORE airconv compiles.
+echo "=== MADEIRA-MAC-BUILD: airconv embedded shaders (air_*.h) ==="
+mkdir -p "$BUILD_DIR/shader-headers"
+for sh in air_msad air_samplepos air_tessellation; do
+    if [ ! -f "$BUILD_DIR/shader-headers/$sh.h" ] \
+       || [ "$DXMT_SRC/airconv/shaders/$sh.metal" -nt "$BUILD_DIR/shader-headers/$sh.h" ]; then
+        # MADEIRA-METAL-ATOMIC: newer Metal compilers (Xcode 27) changed the internal
+        # __metal_atomic_fetch_add_explicit builtin to 5 arguments; use the public API instead.
+        sed 's/__metal_atomic_fetch_add_explicit(out_count, 1, int(memory_order_relaxed), __METAL_MEMORY_SCOPE_THREADGROUP__)/atomic_fetch_add_explicit((threadgroup atomic_int *)out_count, 1, memory_order_relaxed)/' \
+            "$DXMT_SRC/airconv/shaders/$sh.metal" > "$BUILD_DIR/shader-headers/$sh.metal"
+        (cd "$BUILD_DIR/shader-headers" \
+         && xcrun -sdk macosx metal -o "$sh.air" -c "$sh.metal" \
+                -std=metal3.1 --target=air64-apple-macos14.0 \
+         && xxd -n "$sh" -i "$sh.air" "$sh.h")
+        echo "  $sh.h                                OK"
+    else
+        echo "  $sh.h                                CACHED"
+    fi
+done
+
 echo "=== airconv (C++ 20, needs LLVM headers) ==="
 for cpp in airconv_context.cpp air_type.cpp air_signature.cpp air_operations.cpp \
            dxbc_converter.cpp dxbc_converter_gs.cpp dxbc_converter_ts.cpp \
