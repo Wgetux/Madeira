@@ -17,8 +17,7 @@ if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
     if [ -f "$APP_LIB" ]; then
         cp "$APP_LIB" "$OBJ_DIR/libwineserver.a"
     else
-        echo "ERROR: No base libwineserver.a found"
-        exit 1
+        NEED_BASE=1   # MADEIRA-MAC-BUILD: no prebuilt base archive; bootstrapped below
     fi
 fi
 
@@ -117,6 +116,23 @@ if xcrun -sdk iphoneos clang "${KILL_FLAGS[@]}" -c "$BUILD_DIR/wineserver_ios_ki
     echo "OK"
 else
     echo "FAILED"; cat "$OBJ_DIR/err-kill.txt"; exit 1
+fi
+
+# MADEIRA-MAC-BUILD: a clean checkout has no prebuilt base libwineserver.a.
+# Build it from the upstream wine/server sources that are NOT replaced by the
+# _ios variants / submodule objects listed in PATCHED_FILES below.
+if [ "${NEED_BASE:-0}" = 1 ]; then
+    echo "=== Bootstrapping base libwineserver.a from wine/server ==="
+    BASE_SRCS=(atom change clipboard completion console d3dkmt debugger device \
+               directory file hook mailslot mutex named_pipe registry serial \
+               signal symlink timer token trace procfs ptrace)
+    rm -f "$OBJ_DIR/libwineserver.a"
+    BASE_OBJS=()
+    for f in "${BASE_SRCS[@]}"; do
+        compile_one "$WINE_SRC/server/$f.c" "$f"
+        BASE_OBJS+=("$OBJ_DIR/$f.o")
+    done
+    ar rcs "$OBJ_DIR/libwineserver.a" "${BASE_OBJS[@]}"
 fi
 
 case "${1:-all}" in
