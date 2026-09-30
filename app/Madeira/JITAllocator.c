@@ -930,3 +930,20 @@ __attribute__((constructor(101), used)) static void madeira_early_va_claim(void)
         }
     }
 }
+
+/* MADEIRA-MAC-BUILD: libFEXCore.a built with FEX_IOS_HOST references symbols that, in the
+ * original tree, come from the FEX PE modules / rpmalloc fork. The app only runs the small
+ * in-process FEXBridge test; games run FEX inside xtajit64.dll. Inert stand-ins: */
+uintptr_t ios_fex_band_base = 0;
+uintptr_t ios_fex_band_end = 0;
+int ios_fex_mono_bridge_armed(void) { return 0; }
+void ios_fex_mono_count_activated(void) {}
+uint64_t ios_fex_mono_captured_count(void) { return 0; }
+void ios_fex_mono_count_helper(int miss) { (void)miss; }
+int ios_fex_mono_take_pending(uint64_t *b, uint64_t *h, uint64_t *f) { (void)b; (void)h; (void)f; return 0; }
+int rpm_cas_snapshot_take(void *out) { (void)out; return 0; }
+
+/* MADEIRA-MAC-BUILD: same as above. No sub-floor windows / no mono alias table in this link:
+ * identity mapping and "miss", exactly what the WOW64 module (no windows) does in FEX itself. */
+uint64_t IosSubfloorToReal(uint64_t addr) { return addr; }
+uint64_t IosMonoResolveRW(uint64_t guest_addr, uint64_t size) { (void)guest_addr; (void)size; return 0; }
