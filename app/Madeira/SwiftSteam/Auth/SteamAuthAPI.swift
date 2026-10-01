@@ -39,7 +39,7 @@ enum SteamAuthAPI {
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await send(request, method: method)
         guard let http = response as? HTTPURLResponse else {
             throw SteamError.authenticationFailed("Steam did not respond. Check your internet connection.")
         }
@@ -52,6 +52,26 @@ enum SteamAuthAPI {
             throw error(for: code)
         }
         return data
+    }
+
+    // MADEIRA-MAC-BUILD: iOS does not retry a POST whose connection dropped, and reports it as
+    // URLError -1005 (NSURLErrorNetworkConnectionLost). That happens whenever the app is
+    // suspended for a moment (switching to the Steam app to scan the QR code) or the server
+    // closes an idle keep-alive connection just as the next poll is sent. Every request here is
+    // safe to repeat, and the QR/password flows treated the first such error as fatal, aborting
+    // the whole sign-in. Retry transient transport errors a few times before giving up.
+    private static func send(_ request: URLRequest, method: String) async throws -> (Data, URLResponse) {
+        let transient: Set<Int> = [-1005, -1001, -1004, -1009, -1018]
+        var attempt = 0
+        while true {
+            do {
+                return try await URLSession.shared.data(for: request)
+            } catch let e as URLError where transient.contains(e.code.rawValue) && attempt < 4 {
+                attempt += 1
+                SteamLog.event("[steam-signin] \(method) transient network error \(e.code.rawValue), retry \(attempt)")
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 800_000_000)
+            }
+        }
     }
 
     /// EResult values Steam returns from the authentication service.
