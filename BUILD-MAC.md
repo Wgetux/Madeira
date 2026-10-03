@@ -47,3 +47,55 @@ then zip `Payload/Madeira.app` into an IPA.
   on a clean prefix.
 - The JIT pool size varies per launch (560-624 MB here). At 560 MB the Steam client can
   exhaust it ("JIT pool exhausted") and crash; relaunching usually gives a larger pool.
+
+## Additional requirements for v0.1.3
+
+### Rust (on-device pairing library)
+
+`app/Madeira/libmadeira_rppairing.a` is a Rust static library (idevice). Build it before `xcodebuild`:
+
+~~~
+brew install rustup
+rustup default stable
+rustup target add aarch64-apple-ios
+export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"   # rustup's cargo first
+bash build/rppairing-ios/build.sh
+~~~
+
+If Homebrew's `rust` is also installed, its `cargo` has no iOS standard library and the build fails with
+`can't find crate for core`. Make sure `which cargo` points into `~/.rustup`.
+The script also regenerates `app/Madeira/legal/LICENSES-rppairing-crates.txt`.
+
+### LLVM headers for DXMT
+
+`build/dxmt-ios/build.sh` (airconv, madeira_ags) needs `toolchains/llvm-project/llvm/include`
+(LLVM 15 headers) next to the prebuilt `toolchains/llvm-ios-build`. Without it 18 files fail with
+`'llvm/IR/Constants.h' file not found`.
+
+### Rebuild order after updating
+
+~~~
+bash build/ntdll-unix/build.sh
+bash build/wineserver/build.sh
+bash build/dxmt-ios/build.sh
+bash build/rppairing-ios/build.sh
+xcodebuild ...   # then package the IPA
+~~~
+
+Run `build/fex-ios/build.sh` again only when the FEX submodule or `fex-arm64-mac.patch` changes.
+Check for `BUILD SUCCEEDED` in the xcodebuild log before packaging: a failed link still leaves a partial `Madeira.app`.
+
+### Entitlements (needed for Memory+)
+
+The build uses `CODE_SIGNING_ALLOWED=NO`, so no entitlements are embedded. Embed them before zipping,
+otherwise Memory+ (increased memory limit) stays off when installed through LiveContainer:
+
+~~~
+brew install ldid
+ldid -S app/Madeira/Madeira.entitlements ~/ipa-work/Payload/Madeira.app/Madeira
+~~~
+
+### Choosing a JIT setup
+
+- **LiveContainer + StikDebug**: JIT works; Memory+ comes from the LiveContainer host (e.g. the "Get More RAM" app). The built-in JIT of 0.1.3 is unavailable inside LiveContainer.
+- **Direct install (SideStore/iLoader)**: built-in JIT works, but a free Apple ID does not grant the increased memory limit, so Memory+ stays off.
